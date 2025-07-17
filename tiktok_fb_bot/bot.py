@@ -30,7 +30,7 @@ logging.basicConfig(
 )
 
 # ======= ADMIN TELEGRAM ID ========
-ADMIN_ID = 123456789  # Ganti dengan ID Telegram kamu
+ADMIN_ID = 7835929586  # Ganti dengan ID Telegram kamu
 
 # ======= /start dan /help ========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
