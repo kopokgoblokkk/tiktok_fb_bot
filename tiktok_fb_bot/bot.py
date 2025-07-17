@@ -1,30 +1,100 @@
+import os
+import logging
+import requests
 from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from config import TELEGRAM_TOKEN, FB_PAGE_ID, FB_ACCESS_TOKEN
 from tiktok_downloader import download_tiktok
 from fb_uploader import upload_to_facebook
-import os
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    if "tiktok.com" in text:
-        await update.message.reply_text("📥 Mendownload...")
-        video = download_tiktok(text)
-        if video:
-            await update.message.reply_text("📤 Mengunggah ke Facebook...")
-            result = upload_to_facebook(video)
-            if "id" in result:
-                await update.message.reply_text("✅ Sukses diunggah ke Fanspage!")
-            else:
-                await update.message.reply_text("❌ Gagal upload ke Facebook.")
-            os.remove(video)
-        else:
-            await update.message.reply_text("❌ Gagal download video.")
+# ======= Fungsi untuk resolve shortlink TikTok =======
+def resolve_tiktok_link(url):
+    try:
+        response = requests.get(url, allow_redirects=True, timeout=10)
+        return response.url
+    except Exception as e:
+        print("? Gagal resolve link TikTok:", e)
+        return None
+
+# ======= LOGGING AKTIVITAS ========
+logging.basicConfig(
+    filename='bot.log',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+
+# ======= ADMIN TELEGRAM ID ========
+ADMIN_ID = 7835929586  # Ganti dengan ID Telegram kamu
+
+# ======= /start dan /help ========
+def start(update: Update, context: CallbackContext):
+    if update.effective_user.id != ADMIN_ID:
+        update.message.reply_text("? Maaf, bot ini hanya untuk admin.")
+        return
+    update.message.reply_text("?? Kirim link TikTok ke sini, nanti saya upload ke Fanspage otomatis!")
+
+def help_command(update: Update, context: CallbackContext):
+    update.message.reply_text("?? Cukup kirim link TikTok, saya akan unduh dan unggah ke Fanspage Facebook.")
+
+# ======= Handler Pesan Utama ========
+def handle_message(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    message = update.message.text
+
+    # Hanya admin yang bisa pakai
+    if user_id != ADMIN_ID:
+        update.message.reply_text("? Maaf, bot ini hanya untuk admin.")
+        return
+
+    # Validasi link TikTok
+    if "tiktok.com" not in message:
+        update.message.reply_text("?? Kirim link TikTok yang valid.")
+        return
+
+    # Resolve jika shortlink TikTok
+    if "vm.tiktok.com" in message:
+        resolved = resolve_tiktok_link(message)
+        if not resolved:
+            update.message.reply_text("? Gagal memproses link pendek TikTok.")
+            return
+        message = resolved
+
+    logging.info(f"User {user_id} mengirim link: {message}")
+    msg = update.message.reply_text("?? Sedang mengunduh video dari TikTok...")
+
+    # Unduh video
+    video_path = download_tiktok(message)
+    if not video_path:
+        msg.edit_text("? Gagal mengunduh video.")
+        logging.error("Gagal unduh video TikTok.")
+        return
+
+    msg.edit_text("?? Mengunggah video ke Facebook Fanspage...")
+
+    # Upload ke Facebook
+    success = upload_to_facebook(video_path, FB_PAGE_ID, FB_ACCESS_TOKEN)
+
+    if success:
+        msg.edit_text("? Video berhasil diunggah ke Fanspage.")
+        logging.info("Upload sukses.")
     else:
-        await update.message.reply_text("Kirimkan link TikTok.")
+        msg.edit_text("? Gagal upload ke Facebook.")
+        logging.error("Upload gagal.")
 
-if __name__ == "__main__":
-    from config import TELEGRAM_TOKEN
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print("Bot aktif...")
-    app.run_polling()
+    os.remove(video_path)
+
+# ======= MAIN ========
+def main():
+    updater = Updater(TELEGRAM_TOKEN, use_context=True)
+    dp = updater.dispatcher
+
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("help", help_command))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == '__main__':
+    main()
+
