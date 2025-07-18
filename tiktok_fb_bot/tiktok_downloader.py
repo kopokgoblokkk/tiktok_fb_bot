@@ -1,40 +1,51 @@
 import requests
-import re
+from bs4 import BeautifulSoup
 
 def download_tiktok(url):
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Content-Type": "application/x-www-form-urlencoded"
-        }
-        data = {
-            "id": url,
-            "locale": "en",
-            "tt": "MT=="
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/115.0.0.0 Safari/537.36"
+            )
         }
 
-        res = requests.post("https://ssstik.io/abc?url=dl", headers=headers, data=data)
-        if res.status_code != 200:
-            print("❌ Gagal request ke ssstik.io")
-            return None
+        session = requests.Session()
+        # Kirim POST request ke ssstik endpoint
+        res = session.post(
+            "https://ssstik.io/abc",
+            data={"id": url, "locale": "en"},
+            headers=headers,
+            timeout=15
+        )
 
-        # Ekstrak URL video tanpa watermark
-        video_url = re.search(r'href=\"(https://[^"]+\.mp4)\"', res.text)
-        if not video_url:
+        # Parsing HTML dengan BeautifulSoup
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        # Simpan HTML untuk debugging
+        with open("ssstik_debug.html", "w", encoding="utf-8") as f:
+            f.write(res.text)
+
+        # Cari tag link download video (tanpa watermark)
+        video_tag = soup.find("a", attrs={"class": "result__btn", "target": "_blank"})
+        if not video_tag:
             print("❌ Gagal ekstrak URL video dari HTML ssstik.io")
             return None
 
-        video_link = video_url.group(1)
-        video_data = requests.get(video_link)
-        if video_data.status_code != 200:
-            print("❌ Gagal unduh video dari URL yang ditemukan")
+        video_url = video_tag.get("href")
+        if not video_url:
+            print("❌ Tidak menemukan URL video di tag <a>")
             return None
 
-        with open("tiktok_video.mp4", "wb") as f:
+        # Unduh file video
+        video_data = session.get(video_url, headers=headers, timeout=15)
+        filename = "tiktok_video.mp4"
+        with open(filename, "wb") as f:
             f.write(video_data.content)
 
-        return "tiktok_video.mp4"
+        return filename
 
     except Exception as e:
-        print(f"❌ Error download_tiktok: {e}")
+        print(f"❌ Error saat mengunduh video dari ssstik: {e}")
         return None
