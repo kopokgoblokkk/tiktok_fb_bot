@@ -12,40 +12,44 @@ def download_tiktok(url):
         }
 
         session = requests.Session()
-        # Kirim POST request ke ssstik endpoint
-        res = session.post(
+        res_get = session.get("https://ssstik.io/en", headers=headers, timeout=10)
+        soup_get = BeautifulSoup(res_get.text, "html.parser")
+
+        # Ambil token dari input hidden
+        token = soup_get.find("input", {"id": "token"})
+        if not token:
+            print("❌ Token tidak ditemukan, halaman dilindungi Cloudflare?")
+            return None
+
+        token_value = token.get("value")
+
+        res_post = session.post(
             "https://ssstik.io/abc",
-            data={"id": url, "locale": "en"},
+            data={"id": url, "locale": "en", "token": token_value},
             headers=headers,
             timeout=15
         )
 
-        # Parsing HTML dengan BeautifulSoup
-        soup = BeautifulSoup(res.text, "html.parser")
+        soup_post = BeautifulSoup(res_post.text, "html.parser")
 
-        # Simpan HTML untuk debugging
+        # Simpan debug HTML
         with open("ssstik_debug.html", "w", encoding="utf-8") as f:
-            f.write(res.text)
+            f.write(res_post.text)
 
-        # Cari tag link download video (tanpa watermark)
-        video_tag = soup.find("a", attrs={"class": "result__btn", "target": "_blank"})
-        if not video_tag:
-            print("❌ Gagal ekstrak URL video dari HTML ssstik.io")
+        # Cari URL unduhan
+        a_tag = soup_post.find("a", href=True, attrs={"class": "result__btn", "target": "_blank"})
+        if not a_tag:
+            print("❌ Gagal menemukan tag download di HTML.")
             return None
 
-        video_url = video_tag.get("href")
-        if not video_url:
-            print("❌ Tidak menemukan URL video di tag <a>")
-            return None
+        video_url = a_tag["href"]
+        video_res = session.get(video_url, headers=headers)
 
-        # Unduh file video
-        video_data = session.get(video_url, headers=headers, timeout=15)
-        filename = "tiktok_video.mp4"
-        with open(filename, "wb") as f:
-            f.write(video_data.content)
+        with open("tiktok_video.mp4", "wb") as f:
+            f.write(video_res.content)
 
-        return filename
+        return "tiktok_video.mp4"
 
     except Exception as e:
-        print(f"❌ Error saat mengunduh video dari ssstik: {e}")
+        print(f"❌ Error saat unduh TikTok: {e}")
         return None
