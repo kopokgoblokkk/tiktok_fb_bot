@@ -1,55 +1,51 @@
 import requests
 from bs4 import BeautifulSoup
+import time
 
 def download_tiktok(url):
     try:
         headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/115.0.0.0 Safari/537.36"
-            )
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://ttdownloader.com/"
         }
 
         session = requests.Session()
-        res_get = session.get("https://ssstik.io/en", headers=headers, timeout=10)
-        soup_get = BeautifulSoup(res_get.text, "html.parser")
 
-        # Ambil token dari input hidden
-        token = soup_get.find("input", {"id": "token"})
+        # 1. Buka halaman awal untuk ambil cookie dan token
+        home_page = session.get("https://ttdownloader.com/", headers=headers)
+        soup = BeautifulSoup(home_page.text, "html.parser")
+
+        token = soup.find("input", {"id": "token"}).get("value")
         if not token:
-            print("❌ Token tidak ditemukan, halaman dilindungi Cloudflare?")
+            print("❌ Token tidak ditemukan di halaman ttdownloader.com")
             return None
 
-        token_value = token.get("value")
+        # 2. Kirim POST request untuk memproses link
+        data = {
+            "url": url,
+            "format": "",
+            "token": token
+        }
 
-        res_post = session.post(
-            "https://ssstik.io/abc",
-            data={"id": url, "locale": "en", "token": token_value},
-            headers=headers,
-            timeout=15
-        )
+        time.sleep(1.5)  # delay supaya tidak dianggap bot
+        res = session.post("https://ttdownloader.com/req/", headers=headers, data=data)
+        soup = BeautifulSoup(res.text, "html.parser")
 
-        soup_post = BeautifulSoup(res_post.text, "html.parser")
+        # 3. Ambil URL video tanpa watermark
+        video_no_wm = soup.find("a", {"id": "download"}).get("href")
 
-        # Simpan debug HTML
-        with open("ssstik_debug.html", "w", encoding="utf-8") as f:
-            f.write(res_post.text)
-
-        # Cari URL unduhan
-        a_tag = soup_post.find("a", href=True, attrs={"class": "result__btn", "target": "_blank"})
-        if not a_tag:
-            print("❌ Gagal menemukan tag download di HTML.")
+        if not video_no_wm:
+            print("❌ Gagal mendapatkan URL video dari ttdownloader.com")
             return None
 
-        video_url = a_tag["href"]
-        video_res = session.get(video_url, headers=headers)
+        # 4. Unduh video
+        video_data = session.get(video_no_wm, headers=headers)
+        filename = "tiktok_video.mp4"
+        with open(filename, "wb") as f:
+            f.write(video_data.content)
 
-        with open("tiktok_video.mp4", "wb") as f:
-            f.write(video_res.content)
-
-        return "tiktok_video.mp4"
+        return filename
 
     except Exception as e:
-        print(f"❌ Error saat unduh TikTok: {e}")
+        print(f"❌ Error saat mengunduh dari ttdownloader: {e}")
         return None
